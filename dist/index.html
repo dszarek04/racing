@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TS Drift Engine</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; overflow: hidden; background: #111; color: #fff; font-family: 'Segoe UI', system-ui, sans-serif; }
+      canvas { display: block; }
+
+      /* ── Top-left HUD ── */
+      #hud-tl {
+        position: absolute; top: 18px; left: 18px;
+        pointer-events: none;
+        text-shadow: 0 2px 10px rgba(0,0,0,0.9);
+      }
+      #timer {
+        font-size: 40px; font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: 2px; line-height: 1;
+      }
+      #speed {
+        font-size: 20px; color: #bbb;
+        margin-top: 5px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* ── Pause / settings overlay ── */
+      #pause-menu {
+        display: none;
+        position: absolute; inset: 0;
+        background: rgba(0,0,0,0.72);
+        align-items: center; justify-content: center;
+        z-index: 20;
+      }
+      #pause-menu.visible { display: flex; }
+      #pause-card {
+        background: #1a1a1a;
+        border: 1px solid #3a3a3a;
+        border-radius: 14px;
+        padding: 34px 44px;
+        min-width: 340px;
+        text-align: center;
+        box-shadow: 0 8px 40px rgba(0,0,0,0.7);
+      }
+      #pause-card h2 {
+        margin: 0 0 28px;
+        font-size: 26px; letter-spacing: 5px; color: #eee;
+      }
+      .menu-section { margin-bottom: 22px; text-align: left; }
+      .menu-section > label {
+        font-size: 11px; color: #666;
+        text-transform: uppercase; letter-spacing: 1.5px;
+        display: block; margin-bottom: 10px;
+      }
+      .btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
+      .menu-btn {
+        padding: 8px 18px;
+        background: #2a2a2a; border: 1px solid #444;
+        border-radius: 7px; color: #ccc;
+        cursor: pointer; font-size: 14px;
+        transition: background 0.12s, border-color 0.12s;
+      }
+      .menu-btn:hover { background: #383838; }
+      .menu-btn.active {
+        background: #1a3a6a; border-color: #4a8fd4; color: #fff;
+      }
+      #btn-resume {
+        margin-top: 10px; width: 100%;
+        padding: 13px; background: #1b5e20;
+        border: 1px solid #4caf50; border-radius: 9px;
+        color: #fff; cursor: pointer;
+        font-size: 15px; font-weight: 700; letter-spacing: 3px;
+        transition: background 0.12s;
+      }
+      #btn-resume:hover { background: #2e7d32; }
+
+      #controls-hint {
+        position: absolute; bottom: 10px; left: 14px;
+        font-size: 11px; color: #444; pointer-events: none;
+      }
+    </style>
+    <script type="module" crossorigin src="/assets/index-DkhNl88Q.js"></script>
+  </head>
+  <body>
+    <!-- Top-left: timer + speed -->
+    <div id="hud-tl">
+      <div id="timer">00:00:000</div>
+      <div id="speed">0 km/h</div>
+    </div>
+
+    <!-- Pause / settings menu -->
+    <div id="pause-menu">
+      <div id="pause-card">
+        <h2>PAUSED</h2>
+
+        <div class="menu-section">
+          <label>Track</label>
+          <div class="btn-group">
+            <button class="menu-btn track-btn active" data-track="oval">Oval</button>
+            <button class="menu-btn track-btn" data-track="figure8">Figure-8</button>
+            <button class="menu-btn track-btn" data-track="technical">Technical</button>
+          </div>
+        </div>
+
+        <div class="menu-section">
+          <label>Speed Unit</label>
+          <div class="btn-group">
+            <button class="menu-btn unit-btn active" data-unit="kmh">km/h</button>
+            <button class="menu-btn unit-btn" data-unit="mph">mph</button>
+          </div>
+        </div>
+
+        <button id="btn-resume">RESUME</button>
+      </div>
+    </div>
+
+    <div id="controls-hint">WASD / Arrows to drive &nbsp;·&nbsp; SPACE = Handbrake &nbsp;·&nbsp; R = Reset &nbsp;·&nbsp; ESC = Menu</div>
+
+    <canvas id="gameCanvas"></canvas>
+  </body>
+</html>

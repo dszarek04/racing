@@ -1,12 +1,12 @@
 // Mock sound manager structure
 export class SoundManager {
-  playEngine(rpmScale: number) {
+  playEngine() {
     // In a real environment: update WebAudio oscillator pitch/volume based on rpmScale
   }
-  playTireSqueal(slipAmount: number) {
+  playTireSqueal() {
     // Play squeal sound if slip exceeds threshold
   }
-  playCrash(impactVelocity: number) {
+  playCrash() {
     // Play crash sound scaled by impact
   }
 }
