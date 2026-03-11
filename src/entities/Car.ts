@@ -53,16 +53,16 @@ export class Car {
     // Steering: rate decreases at higher speed; inverted when reversing
     const rawSteer = input.right - input.left;
     const steerInput = fwdSpeed < -5 ? -rawSteer : rawSteer;
-    this.currentSteer += (steerInput - this.currentSteer) * 0.2;
+    this.currentSteer += (steerInput - this.currentSteer) * (1 - Math.pow(0.8, dt * 60));
     if (absSpeed > 5) {
       // Wheel simulation: turning builds with speed (no tank-spinning), then decreases at high speed
       const turnFactor = Math.min(absSpeed / 80, 1) / (1 + absSpeed / 500);
-      this.heading += this.currentSteer * this.turnSpeed * turnFactor;
+      this.heading += this.currentSteer * this.turnSpeed * turnFactor * dt * 60;
     }
 
     // Integrate collision-induced angular velocity
     this.heading += this.angularVel * dt;
-    this.angularVel *= 0.9;
+    this.angularVel *= Math.pow(0.9, dt * 60);
 
     // Use raw key state for which pedal is active so that the smoothing decay
     // on one input never blocks the other (e.g. releasing W while pressing S).
@@ -83,10 +83,10 @@ export class Car {
 
     fwdSpeed += accel * dt;
     fwdSpeed = Math.max(-300, fwdSpeed);
-    fwdSpeed *= this.friction;
+    fwdSpeed *= Math.pow(this.friction, dt * 60);
 
     if (track) {
-      fwdSpeed *= track.getFrictionMultiplier(this.pos);
+      fwdSpeed *= Math.pow(track.getFrictionMultiplier(this.pos), dt * 60);
     }
 
     // Timer only counts when both conditions are active: sharp steer AND near top speed.
@@ -111,23 +111,23 @@ export class Car {
 
     // Handbrake: inject lateral force from steering and kill rear grip
     if (handbrakeHeld && absSpeed > 30) {
-      latSpeed += this.currentSteer * absSpeed * 0.055;
+      latSpeed += this.currentSteer * absSpeed * 0.055 * dt * 60;
       lateralGrip = Math.min(lateralGrip, 0.55);
-      fwdSpeed *= 0.97; // light drag
+      fwdSpeed *= Math.pow(0.97, dt * 60); // light drag
     }
 
-    latSpeed *= lateralGrip;
+    latSpeed *= Math.pow(lateralGrip, dt * 60);
 
     // Drift effects: proportional to how far latSpeed exceeds the drift threshold
     const driftRatio = Math.max(0, Math.abs(latSpeed) - driftThreshold) / driftThreshold;
     this.driftRatio = driftRatio;
     if (driftRatio > 0 && fwdSpeed > 0) {
-      fwdSpeed *= 1 - driftRatio * 0.005; // up to 0.5% speed bleed per frame at full drift
+      fwdSpeed *= Math.pow(1 - driftRatio * 0.005, dt * 60); // up to 0.5% speed bleed per frame at full drift
     }
 
     // Body rotation: always proportional to lateral slip so it builds/fades smoothly
     if (fwdSpeed > 0) {
-      this.heading += latSpeed * 0.00035;
+      this.heading += latSpeed * 0.00035 * dt * 60;
     }
 
     // Recombine using updated heading axes

@@ -29,6 +29,11 @@ let currentTrackName = 'oval';
 let cameraZoom = 1.5;
 let smoothedCamSpeed = 0;
 
+// FPS tracking
+let fpsDisplay = 0;
+let _fpsCount = 0;
+let _fpsTimer = 0;
+
 // Pause menu
 const pauseMenu = document.getElementById('pause-menu')!;
 
@@ -216,6 +221,14 @@ function gameLoop(time: number) {
   if (dt > 0.1) dt = 0.1;
   lastTime = time;
 
+  _fpsTimer += dt;
+  _fpsCount++;
+  if (_fpsTimer >= 0.5) {
+    fpsDisplay = Math.round(_fpsCount / _fpsTimer);
+    _fpsCount = 0;
+    _fpsTimer = 0;
+  }
+
   input.update();
   if (!isPaused && input.resetRequested) resetGame();
   input.resetRequested = false;
@@ -275,6 +288,14 @@ function gameLoop(time: number) {
 
   // Screen-space HUD overlays
   drawInputIndicator();
+
+  // FPS counter (top-right)
+  ctx.save();
+  ctx.font = 'bold 13px Segoe UI, system-ui';
+  ctx.textAlign = 'right';
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  ctx.fillText(`${fpsDisplay} FPS`, canvas.width - 12, 22);
+  ctx.restore();
 }
 
 loadTrack('oval').then(() => requestAnimationFrame(gameLoop));
