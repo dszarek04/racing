@@ -19,82 +19,112 @@ export class Track {
   checkpoints: { p1: Vec2, p2: Vec2 }[] = [];
   startPos: Vec2 = new Vec2();
   startHeading: number = 0;
+  /** Multiplier applied to the car's maximum forward speed on this track. Default 1. */
+  topSpeedMultiplier: number = 1;
 
   async load(url: string) {
-    const res = await fetch(url);
-    const data: { segments: BezierSegment[] } = await res.json();
+    const res  = await fetch(url);
+    const data: { segments: BezierSegment[]; top_speed_multiplier?: number } = await res.json();
+    this.topSpeedMultiplier = data.top_speed_multiplier ?? 1;
     this.buildGeometry(data.segments);
   }
 
-  buildGeometry(segments: BezierSegment[]) {
+  buildGeometry(segments: BezierSegment[], topSpeedMultiplier = 1) {
+    this.topSpeedMultiplier = topSpeedMultiplier;
     this.innerWall = []; this.outerWall = []; this.centerLine = []; this.checkpoints = [];
     this.barrierInner = []; this.barrierOuter = []; this.outerIsTight = [];
-    const tmpBarrierInner: Vec2[] = [];
-    const tmpBarrierOuter: Vec2[] = [];
     this.segmentBoundaries = [];
-    const steps = 20;
+
+    const steps      = 20;
+    const grassWidth = 20;
+
+    // ── Stage 1: sample Bezier geometry ──────────────────────────────────
+    // Collect raw per-point geometry without mutating any arrays yet.
+    const ptX:      number[] = [];
+    const ptY:      number[] = [];
+    const nX:       number[] = [];
+    const nY:       number[] = [];
+    const tanX:     number[] = [];
+    const tanY:     number[] = [];
+    const rawHw:    number[] = [];
+    const isSegStart: boolean[] = [];
 
     segments.forEach((seg, index) => {
-      this.segmentBoundaries.push(this.innerWall.length);
       for (let i = 0; i <= steps; i++) {
-        if (i === steps && index < segments.length - 1) continue; // Prevent dupes at joints
-        const t = i / steps;
-        const mt = 1 - t;
-        
-        // Cubic Bezier Evaluation
-        const x = mt**3 * seg.p0[0] + 3*mt**2*t * seg.p1[0] + 3*mt*t**2 * seg.p2[0] + t**3 * seg.p3[0];
-        const y = mt**3 * seg.p0[1] + 3*mt**2*t * seg.p1[1] + 3*mt*t**2 * seg.p2[1] + t**3 * seg.p3[1];
-        
-        // Derivative for normal
-        const dx = 3*mt**2 * (seg.p1[0]-seg.p0[0]) + 6*mt*t * (seg.p2[0]-seg.p1[0]) + 3*t**2 * (seg.p3[0]-seg.p2[0]);
-        const dy = 3*mt**2 * (seg.p1[1]-seg.p0[1]) + 6*mt*t * (seg.p2[1]-seg.p1[1]) + 3*t**2 * (seg.p3[1]-seg.p2[1]);
-        
-        const mag = Math.hypot(dx, dy);
-        const nx = -dy/mag; const ny = dx/mag; // Left normal
-        
+        if (i === steps && index < segments.length - 1) continue;
+        const t = i / steps, mt = 1 - t;
+
+        const x   = mt**3*seg.p0[0] + 3*mt**2*t*seg.p1[0] + 3*mt*t**2*seg.p2[0] + t**3*seg.p3[0];
+        const y   = mt**3*seg.p0[1] + 3*mt**2*t*seg.p1[1] + 3*mt*t**2*seg.p2[1] + t**3*seg.p3[1];
+        const dx  = 3*mt**2*(seg.p1[0]-seg.p0[0]) + 6*mt*t*(seg.p2[0]-seg.p1[0]) + 3*t**2*(seg.p3[0]-seg.p2[0]);
+        const dy  = 3*mt**2*(seg.p1[1]-seg.p0[1]) + 6*mt*t*(seg.p2[1]-seg.p1[1]) + 3*t**2*(seg.p3[1]-seg.p2[1]);
+        const ddx = 6*mt*(seg.p2[0]-2*seg.p1[0]+seg.p0[0]) + 6*t*(seg.p3[0]-2*seg.p2[0]+seg.p1[0]);
+        const ddy = 6*mt*(seg.p2[1]-2*seg.p1[1]+seg.p0[1]) + 6*t*(seg.p3[1]-2*seg.p2[1]+seg.p1[1]);
+
+        const mag   = Math.hypot(dx, dy);
         const width = seg.start_width + (seg.end_width - seg.start_width) * t;
-        const hw = width / 2;
+        const cross = Math.abs(dx * ddy - dy * ddx);
+        const localR = cross > 1e-6 ? (mag * mag * mag) / cross : Infinity;
 
-        const center = new Vec2(x, y);
-        const inner = new Vec2(x - nx*hw, y - ny*hw);
-        const outer = new Vec2(x + nx*hw, y + ny*hw);
-
-        this.centerLine.push(center);
-        this.innerWall.push(inner);
-        this.outerWall.push(outer);
-
-        // compute barrier positions (offset by grass width outward from asphalt)
-        const grassWidth = 20;
-        // use the direction from center to wall point to determine outward
-        const toOuterX = outer.x - center.x;
-        const toOuterY = outer.y - center.y;
-        const magO = Math.hypot(toOuterX, toOuterY) || 1;
-        const outNx = toOuterX / magO;
-        const outNy = toOuterY / magO;
-        tmpBarrierOuter.push(new Vec2(outer.x + outNx * grassWidth, outer.y + outNy * grassWidth));
-
-        const toInnerX = inner.x - center.x;
-        const toInnerY = inner.y - center.y;
-        const magI = Math.hypot(toInnerX, toInnerY) || 1;
-        const inNx = toInnerX / magI;
-        const inNy = toInnerY / magI;
-        tmpBarrierInner.push(new Vec2(inner.x + inNx * grassWidth, inner.y + inNy * grassWidth));
-
-        // we will fill outerIsTight later after building all points
-        this.outerIsTight.push(false);
-
-        // Save start pos from first point
-        if (index === 0 && i === 0) {
-          this.startPos = center;
-          this.startHeading = Math.atan2(dy, dx);
-        }
-
-        // Add checkpoints roughly every 10 steps
-        if (i % 10 === 0) {
-            this.checkpoints.push({ p1: inner, p2: outer });
-        }
+        ptX.push(x);  ptY.push(y);
+        nX.push(-dy / mag);  nY.push(dx / mag);
+        tanX.push(dx);  tanY.push(dy);
+        rawHw.push(Math.max(40, Math.min(width / 2, localR * 0.82)));
+        isSegStart.push(i === 0);
       }
     });
+
+    // ── Stage 2: smooth hw to remove abrupt width-transition kinks ────────
+    // A sudden hw change (clamped apex → full width) creates a kink in the
+    // wall polyline.  3 passes of a 5-point moving average spreads out the
+    // transition so it looks like the road naturally narrows into a corner.
+    const hw = rawHw.slice();
+    for (let pass = 0; pass < 3; pass++) {
+      const prev = hw.slice();
+      for (let i = 2; i < hw.length - 2; i++) {
+        hw[i] = (prev[i-2] + prev[i-1] + prev[i] + prev[i+1] + prev[i+2]) / 5;
+      }
+    }
+
+    // ── Stage 3: build wall / barrier / checkpoint arrays ─────────────────
+    const tmpBarrierInner: Vec2[] = [];
+    const tmpBarrierOuter: Vec2[] = [];
+
+    for (let idx = 0; idx < ptX.length; idx++) {
+      if (isSegStart[idx]) this.segmentBoundaries.push(this.innerWall.length);
+
+      const h      = hw[idx];
+      const x      = ptX[idx],  y  = ptY[idx];
+      const nx     = nX[idx],   ny = nY[idx];
+      const center = new Vec2(x, y);
+      const inner  = new Vec2(x - nx * h, y - ny * h);
+      const outer  = new Vec2(x + nx * h, y + ny * h);
+
+      this.centerLine.push(center);
+      this.innerWall.push(inner);
+      this.outerWall.push(outer);
+
+      const toOutX = outer.x - x, toOutY = outer.y - y;
+      const magO   = Math.hypot(toOutX, toOutY) || 1;
+      tmpBarrierOuter.push(new Vec2(outer.x + (toOutX / magO) * grassWidth,
+                                    outer.y + (toOutY / magO) * grassWidth));
+
+      const toInX = inner.x - x, toInY = inner.y - y;
+      const magI  = Math.hypot(toInX, toInY) || 1;
+      tmpBarrierInner.push(new Vec2(inner.x + (toInX / magI) * grassWidth,
+                                    inner.y + (toInY / magI) * grassWidth));
+
+      this.outerIsTight.push(false);
+
+      if (idx === 0) {
+        this.startPos    = center;
+        this.startHeading = Math.atan2(tanY[idx], tanX[idx]);
+      }
+
+      if (idx % 10 === 0) {
+        this.checkpoints.push({ p1: inner, p2: outer });
+      }
+    }
 
         // After building walls compute tight segments using centerLine tangents.
         // only mark genuinely tight corners; increase threshold accordingly
@@ -215,17 +245,24 @@ export class Track {
       ctx.stroke();
     };
 
-    // Helper: draw asphalt per-segment (avoids self-intersection fill artifacts)
+    // Single polygon causes canvas fill voids when hw narrows and reverses
+    // winding (counter-wound sections are left unfilled by the non-zero rule).
+    // Per-segment fills avoid this: each segment is convex / single-wound.
+    // Extending 2 points into the next segment guarantees full overlap so
+    // there are zero anti-aliased seams at segment boundaries.
     const fillAsphalt = () => {
       ctx.fillStyle = '#333';
       for (let s = 0; s < this.segmentBoundaries.length; s++) {
-        const start = this.segmentBoundaries[s];
-        const end = s + 1 < this.segmentBoundaries.length
-          ? this.segmentBoundaries[s + 1] + 1
+        const segStart = this.segmentBoundaries[s];
+        const nextSeg  = s + 1 < this.segmentBoundaries.length
+          ? this.segmentBoundaries[s + 1]
           : this.innerWall.length;
+        const segEnd = Math.min(nextSeg + 2, this.innerWall.length - 1);
         ctx.beginPath();
-        for (let i = start; i < end; i++) ctx[i === start ? 'moveTo' : 'lineTo'](this.innerWall[i].x, this.innerWall[i].y);
-        for (let i = end - 1; i >= start; i--) ctx.lineTo(this.outerWall[i].x, this.outerWall[i].y);
+        for (let i = segStart; i <= segEnd; i++)
+          ctx[i === segStart ? 'moveTo' : 'lineTo'](this.innerWall[i].x, this.innerWall[i].y);
+        for (let i = segEnd; i >= segStart; i--)
+          ctx.lineTo(this.outerWall[i].x, this.outerWall[i].y);
         ctx.closePath();
         ctx.fill();
       }
@@ -235,13 +272,28 @@ export class Track {
     fillAsphalt();
 
     // 2. Grass strokes on top — extend 20px on each side of wall, giving green road-edge border
+    // Round joins/caps prevent miter spikes at polyline kinks (tight-corner hw transitions).
     ctx.lineWidth = grassWidth * 2;
     ctx.strokeStyle = '#4b7b4b';
+    ctx.lineJoin = 'round';
+    ctx.lineCap  = 'round';
     strokeWall(this.innerWall);
     strokeWall(this.outerWall);
+    ctx.lineJoin = 'miter';
+    ctx.lineCap  = 'butt';
 
-    // 3. Asphalt again — covers any grass that bled into crossing areas (e.g. figure-8)
+    // 3. Asphalt again — covers any grass that bled into the road area.
     fillAsphalt();
+    // Hairline seal: a thin asphalt-coloured stroke exactly on each wall edge
+    // catches any sub-pixel ghost left by the round grass caps at kink points.
+    ctx.lineWidth   = 4;
+    ctx.strokeStyle = '#333';
+    ctx.lineJoin    = 'round';
+    ctx.lineCap     = 'round';
+    strokeWall(this.innerWall);
+    strokeWall(this.outerWall);
+    ctx.lineJoin = 'miter';
+    ctx.lineCap  = 'butt';
 
     // Barrier lines (darker gray) outside the grass — runs skip points inside crossing asphalt
     ctx.lineWidth = 15;

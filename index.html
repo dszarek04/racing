@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>TS Drift Engine</title>
+    <title>TS Racing</title>
     <style>
       * { box-sizing: border-box; }
       body { margin: 0; overflow: hidden; background: #111; color: #fff; font-family: 'Segoe UI', system-ui, sans-serif; }
@@ -21,40 +21,50 @@
         letter-spacing: 2px; line-height: 1;
       }
       #speed {
-        font-size: 20px; color: #bbb;
-        margin-top: 5px;
+        font-size: 20px; color: #bbb; margin-top: 5px;
         font-variant-numeric: tabular-nums;
       }
+      #lap-counter {
+        font-size: 16px; color: #aaa; margin-top: 4px;
+        font-variant-numeric: tabular-nums;
+        display: none;
+      }
 
-      /* ── Pause / settings overlay ── */
-      #pause-menu {
+      /* ── Overlay base ── */
+      .overlay {
         display: none;
         position: absolute; inset: 0;
-        background: rgba(0,0,0,0.72);
+        background: rgba(0,0,0,0.78);
         align-items: center; justify-content: center;
         z-index: 20;
       }
-      #pause-menu.visible { display: flex; }
-      #pause-card {
+      .overlay.visible { display: flex; }
+
+      /* ── Shared card ── */
+      .card {
         background: #1a1a1a;
         border: 1px solid #3a3a3a;
         border-radius: 14px;
-        padding: 34px 44px;
-        min-width: 340px;
+        padding: 36px 48px;
+        min-width: 360px;
+        max-width: 480px;
+        width: 100%;
         text-align: center;
         box-shadow: 0 8px 40px rgba(0,0,0,0.7);
       }
-      #pause-card h2 {
-        margin: 0 0 28px;
-        font-size: 26px; letter-spacing: 5px; color: #eee;
-      }
-      .menu-section { margin-bottom: 22px; text-align: left; }
+      .card h2 { margin: 0 0 28px; font-size: 26px; letter-spacing: 5px; color: #eee; }
+
+      /* ── Menu section ── */
+      .menu-section { margin-bottom: 20px; text-align: left; }
       .menu-section > label {
         font-size: 11px; color: #666;
         text-transform: uppercase; letter-spacing: 1.5px;
         display: block; margin-bottom: 10px;
       }
-      .btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
+      .btn-group { display: flex; gap: 8px; }
+      .btn-group .menu-btn { flex: 1; text-align: center; padding-left: 0; padding-right: 0; }
+
+      /* ── Buttons ── */
       .menu-btn {
         padding: 8px 18px;
         background: #2a2a2a; border: 1px solid #444;
@@ -63,46 +73,244 @@
         transition: background 0.12s, border-color 0.12s;
       }
       .menu-btn:hover { background: #383838; }
-      .menu-btn.active {
+      .menu-btn.active { background: #1a3a6a; border-color: #4a8fd4; color: #fff; }
+
+      .btn-primary {
+        width: 100%; padding: 13px;
+        background: #1b5e20; border: 1px solid #4caf50;
+        border-radius: 9px; color: #fff;
+        cursor: pointer; font-size: 15px; font-weight: 700; letter-spacing: 3px;
+        transition: background 0.12s; margin-top: 6px;
+      }
+      .btn-primary:hover { background: #2e7d32; }
+      .btn-secondary {
+        width: 100%; padding: 11px;
+        background: #2a2a2a; border: 1px solid #555;
+        border-radius: 9px; color: #ccc;
+        cursor: pointer; font-size: 14px; font-weight: 600; letter-spacing: 2px;
+        transition: background 0.12s; margin-top: 8px;
+      }
+      .btn-secondary:hover { background: #3a3a3a; }
+
+      /* ── Radio-style track selector ── */
+      .track-radio-group { display: flex; gap: 8px; }
+      .track-radio-group input[type="radio"] { display: none; }
+      .track-radio-group label {
+        flex: 1; text-align: center;
+        padding: 8px 0;
+        background: #2a2a2a; border: 1px solid #444;
+        border-radius: 7px; color: #ccc;
+        cursor: pointer; font-size: 14px;
+        transition: background 0.12s, border-color 0.12s;
+        user-select: none;
+      }
+      .track-radio-group input[type="radio"]:checked + label {
         background: #1a3a6a; border-color: #4a8fd4; color: #fff;
       }
-      #btn-resume {
-        margin-top: 10px; width: 100%;
-        padding: 13px; background: #1b5e20;
-        border: 1px solid #4caf50; border-radius: 9px;
-        color: #fff; cursor: pointer;
-        font-size: 15px; font-weight: 700; letter-spacing: 3px;
-        transition: background 0.12s;
-      }
-      #btn-resume:hover { background: #2e7d32; }
+      .track-radio-group label:hover { background: #383838; }
 
+      /* ── Lap count input ── */
+      .lap-input-row { display: flex; align-items: center; gap: 12px; }
+      .lap-input-row input[type="number"] {
+        width: 72px; padding: 8px 10px;
+        background: #2a2a2a; border: 1px solid #444;
+        border-radius: 7px; color: #fff; font-size: 16px;
+        text-align: center;
+      }
+      .lap-input-row input[type="number"]:focus {
+        outline: none; border-color: #4a8fd4;
+      }
+      .lap-input-row span { color: #888; font-size: 13px; }
+
+      /* ── Procedural seed input ── */
+      .seed-input-row { display: flex; align-items: center; gap: 10px; }
+      .seed-input-row input[type="text"] {
+        flex: 1; padding: 8px 10px;
+        background: #2a2a2a; border: 1px solid #444;
+        border-radius: 7px; color: #fff; font-size: 14px;
+        font-variant-numeric: tabular-nums; letter-spacing: 1px;
+      }
+      .seed-input-row input[type="text"]:focus {
+        outline: none; border-color: #4a8fd4;
+      }
+      .seed-input-row input[type="text"]::placeholder { color: #555; }
+      .seed-label-hint { font-size: 11px; color: #555; margin-top: 5px; }
+
+      /* ── Summary table ── */
+      #summary-laps { width: 100%; border-collapse: collapse; margin: 16px 0 24px; }
+      #summary-laps td { padding: 6px 10px; font-size: 14px; color: #ccc; border-bottom: 1px solid #2a2a2a; }
+      #summary-laps td:first-child { text-align: left; color: #888; }
+      #summary-laps td:last-child  { text-align: right; font-variant-numeric: tabular-nums; }
+      #summary-laps tr.best-lap td { color: #ffd54f; }
+      .summary-stat { display: flex; justify-content: space-between; font-size: 13px; color: #888; margin: 4px 0; }
+      .summary-stat span:last-child { color: #eee; font-variant-numeric: tabular-nums; }
+
+      /* ── Pause scoreboard ── */
+      #pause-score-section { margin-top: 18px; text-align: left; }
+      #pause-score-section > label {
+        font-size: 11px; color: #666;
+        text-transform: uppercase; letter-spacing: 1.5px;
+        display: block; margin-bottom: 8px;
+      }
+      #pause-score-table {
+        width: 100%; border-collapse: collapse;
+        margin-bottom: 6px; max-height: 160px;
+        display: block; overflow-y: auto;
+      }
+      #pause-score-table td {
+        padding: 4px 8px; font-size: 13px; color: #ccc;
+        border-bottom: 1px solid #222;
+      }
+      #pause-score-table td:first-child { color: #888; }
+      #pause-score-table td:last-child  { text-align: right; font-variant-numeric: tabular-nums; }
+      #pause-score-table tr.best-lap td { color: #ffd54f; }
+      .pause-best-row { display: flex; justify-content: space-between; font-size: 12px; color: #888; margin-top: 4px; }
+      .pause-best-row span:last-child { color: #eee; font-variant-numeric: tabular-nums; }
       #controls-hint {
         position: absolute; bottom: 10px; left: 14px;
         font-size: 11px; color: #444; pointer-events: none;
+        visibility: hidden;
       }
+
+      /* ── Countdown lights ── */
+      #countdown-overlay {
+        position: absolute; inset: 0;
+        pointer-events: none;
+        z-index: 10;
+      }
+      #countdown-lights {
+        position: absolute;
+        top: 60px; left: 50%;
+        transform: translateX(-50%);
+        display: flex; gap: 16px;
+        background: rgba(20,20,20,0.90);
+        padding: 14px 22px;
+        border-radius: 14px;
+        border: 1px solid #333;
+      }
+      .cdlight {
+        width: 38px; height: 38px;
+        border-radius: 50%;
+        background: #1a0505;
+        border: 2px solid #2a1010;
+        transition: background 0.08s;
+      }
+      .cdlight.red {
+        background: #c62828;
+        box-shadow: 0 0 18px #f44336, 0 0 6px #f44336;
+        border-color: #ef9a9a;
+      }
+      .cdlight.green {
+        background: #2e7d32;
+        box-shadow: 0 0 22px #4caf50, 0 0 8px #66bb6a;
+        border-color: #a5d6a7;
+      }
+      #false-start-banner {
+        position: absolute;
+        top: 50%; right: 24px;
+        transform: translateY(-50%);
+        background: rgba(183,28,28,0.95);
+        color: #fff; font-size: 13px;
+        font-weight: 700; letter-spacing: 2px;
+        padding: 12px 22px;
+        border-radius: 8px;
+        border: 1px solid #ef5350;
+        text-align: center;
+        line-height: 1.6;
+        z-index: 15;
+      }
+
+      /* ── Lap modal ── */
+      #lap-modal .card { min-width: 260px; max-width: 320px; }
+      #lap-modal h2 { margin-bottom: 18px; }
+
+      /* ── Controls screen ── */
+      .controls-table { width: 100%; border-collapse: collapse; margin: 4px 0 18px; }
+      .ctrl-action {
+        text-align: left; padding: 9px 4px;
+        color: #888; font-size: 14px;
+        border-bottom: 1px solid #222;
+      }
+      .ctrl-key { text-align: right; padding: 6px 4px; border-bottom: 1px solid #222; }
+      .key-bind-btn {
+        min-width: 72px; padding: 6px 14px;
+        background: #2a2a2a; border: 1px solid #555;
+        border-radius: 6px; color: #eee;
+        cursor: pointer; font-size: 13px; font-weight: 700;
+        font-family: inherit; letter-spacing: 1px;
+        transition: background 0.1s, border-color 0.1s;
+      }
+      .key-bind-btn:hover { background: #3a3a3a; border-color: #777; }
+      .key-bind-btn.listening {
+        background: #1a3060; border-color: #4a8fd4; color: #7ec8ff;
+        animation: kbpulse 0.7s ease-in-out infinite alternate;
+      }
+      @keyframes kbpulse {
+        from { box-shadow: 0 0 0 rgba(74,143,212,0); }
+        to   { box-shadow: 0 0 10px rgba(74,143,212,0.7); }
+      }
+      .ctrl-note { font-size: 11px; color: #444; margin: 0 0 14px; text-align: left; }
     </style>
   </head>
   <body>
-    <!-- Top-left: timer + speed -->
-    <div id="hud-tl">
+    <!-- Top-left HUD -->
+    <div id="hud-tl" style="visibility:hidden">
       <div id="timer">00:00:000</div>
       <div id="speed">0 km/h</div>
+      <div id="lap-counter"></div>
     </div>
 
-    <!-- Pause / settings menu -->
-    <div id="pause-menu">
-      <div id="pause-card">
-        <h2>PAUSED</h2>
+    <!-- ── Main Menu ── -->
+    <div id="menu-screen" class="overlay visible">
+      <div class="card">
+        <h2>RACING</h2>
 
         <div class="menu-section">
           <label>Track</label>
-          <div class="btn-group">
-            <button class="menu-btn track-btn active" data-track="oval">Oval</button>
-            <button class="menu-btn track-btn" data-track="figure8">Figure-8</button>
-            <button class="menu-btn track-btn" data-track="technical">Technical</button>
+          <div class="track-radio-group">
+            <input type="radio" name="menu-track" id="t-oval" value="oval" data-loop="true" checked />
+            <label for="t-oval">Oval</label>
+            <input type="radio" name="menu-track" id="t-figure8" value="figure8" data-loop="true" />
+            <label for="t-figure8">Figure-8</label>
+            <input type="radio" name="menu-track" id="t-technical" value="technical" data-loop="true" />
+            <label for="t-technical">Technical</label>
+
           </div>
         </div>
 
+        <div class="menu-section">
+          <label>Procedural</label>
+          <div class="track-radio-group">
+            <input type="radio" name="menu-track" id="t-proc-short"  value="procedural-short"  data-loop="false" />
+            <label for="t-proc-short">Short</label>
+            <input type="radio" name="menu-track" id="t-proc-medium" value="procedural-medium" data-loop="false" />
+            <label for="t-proc-medium">Medium</label>
+            <input type="radio" name="menu-track" id="t-proc-long"   value="procedural-long"   data-loop="false" />
+            <label for="t-proc-long">Long</label>
+            <input type="radio" name="menu-track" id="t-proc-xl"     value="procedural-xl"     data-loop="false" />
+            <label for="t-proc-xl">Extra Long</label>
+          </div>
+        </div>
+
+        <!-- Procedural seed — shown only when a Procedural track is selected -->
+        <div id="procedural-seed-section" class="menu-section" style="display:none">
+          <label>Seed <span class="seed-label-hint">(leave blank for random)</span></label>
+          <div class="seed-input-row">
+            <input type="text" id="procedural-seed" placeholder="random or any text"
+              maxlength="32" autocomplete="off" spellcheck="false" />
+          </div>
+        </div>
+
+        <button class="btn-primary" id="btn-race-mode">START RACE</button>
+        <button class="btn-secondary" id="btn-test-mode">FREE DRIVE</button>
+        <button class="btn-secondary" id="btn-controls">CONTROLS</button>
+      </div>
+    </div>
+
+    <!-- ── Pause Menu ── -->
+    <div id="pause-menu" class="overlay">
+      <div class="card">
+        <h2>PAUSED</h2>
         <div class="menu-section">
           <label>Speed Unit</label>
           <div class="btn-group">
@@ -110,12 +318,121 @@
             <button class="menu-btn unit-btn" data-unit="mph">mph</button>
           </div>
         </div>
-
-        <button id="btn-resume">RESUME</button>
+        <button class="btn-primary" id="btn-resume">RESUME</button>
+        <button class="btn-secondary" id="btn-main-menu">MAIN MENU</button>
+        <!-- Procedural seed display (hidden for regular tracks) -->
+        <div id="pause-seed-row" class="summary-stat" style="display:none;margin-top:14px;padding-top:10px;border-top:1px solid #2a2a2a">
+          <span style="color:#666;font-size:12px">Seed</span>
+          <span id="pause-seed" style="color:#eee;font-size:12px;font-variant-numeric:tabular-nums;letter-spacing:1px">—</span>
+        </div>
+        <!-- Free-drive lap scoreboard (hidden in race mode) -->
+        <div id="pause-score-section" style="display:none">
+          <label>Lap Times</label>
+          <table id="pause-score-table"><tbody id="pause-score-body"></tbody></table>
+          <div class="pause-best-row"><span>Best lap</span><span id="pause-best-lap">—</span></div>
+        </div>
       </div>
     </div>
 
-    <div id="controls-hint">WASD / Arrows to drive &nbsp;·&nbsp; SPACE = Handbrake &nbsp;·&nbsp; R = Reset &nbsp;·&nbsp; ESC = Menu</div>
+    <!-- ── Lap Count Modal ── -->
+    <div id="lap-modal" class="overlay">
+      <div class="card">
+        <h2>RACE</h2>
+        <div class="menu-section">
+          <label>Number of Laps</label>
+          <div class="lap-input-row">
+            <input type="number" id="lap-modal-input" value="3" min="1" max="20" />
+            <span>laps</span>
+          </div>
+        </div>
+        <button class="btn-primary" id="btn-lap-modal-start">START RACE</button>
+        <button class="btn-secondary" id="btn-lap-modal-cancel">CANCEL</button>
+      </div>
+    </div>
+
+    <!-- ── Race Summary ── -->
+    <div id="summary-screen" class="overlay">
+      <div class="card">
+        <h2>RACE COMPLETE</h2>
+        <div class="summary-stat">
+          <span>Track</span><span id="summary-track">—</span>
+        </div>
+        <div class="summary-stat" id="summary-seed-row" style="display:none">
+          <span>Seed</span><span id="summary-seed" style="font-variant-numeric:tabular-nums;letter-spacing:1px">—</span>
+        </div>
+        <div class="summary-stat">
+          <span>Laps</span><span id="summary-laps-done">—</span>
+        </div>
+        <table id="summary-laps"></table>
+        <div class="summary-stat">
+          <span>Total time</span><span id="summary-total">—</span>
+        </div>
+        <div class="summary-stat">
+          <span>Best lap</span><span id="summary-best">—</span>
+        </div>
+        <button class="btn-primary" id="btn-summary-retry">RACE AGAIN</button>
+        <button class="btn-secondary" id="btn-summary-menu">MAIN MENU</button>
+      </div>
+    </div>
+
+    <div id="controls-hint">WASD / Arrows to drive &nbsp;·&nbsp; R = Reset &nbsp;·&nbsp; ESC = Pause &nbsp;·&nbsp; Scroll = Zoom</div>
+
+    <!-- ── Controls Screen ── -->
+    <div id="controls-screen" class="overlay">
+      <div class="card">
+        <h2>CONTROLS</h2>
+        <div class="menu-section" style="margin-bottom:18px">
+          <label>Speed Unit</label>
+          <div class="btn-group">
+            <button class="menu-btn unit-btn active" data-unit="kmh">km/h</button>
+            <button class="menu-btn unit-btn" data-unit="mph">mph</button>
+          </div>
+        </div>
+        <table class="controls-table">
+          <tbody>
+            <tr>
+              <td class="ctrl-action">Throttle</td>
+              <td class="ctrl-key"><button class="key-bind-btn" data-action="throttle">W</button></td>
+            </tr>
+            <tr>
+              <td class="ctrl-action">Brake / Reverse</td>
+              <td class="ctrl-key"><button class="key-bind-btn" data-action="brake">S</button></td>
+            </tr>
+            <tr>
+              <td class="ctrl-action">Steer Left</td>
+              <td class="ctrl-key"><button class="key-bind-btn" data-action="left">A</button></td>
+            </tr>
+            <tr>
+              <td class="ctrl-action">Steer Right</td>
+              <td class="ctrl-key"><button class="key-bind-btn" data-action="right">D</button></td>
+            </tr>
+            <tr>
+              <td class="ctrl-action">Reset Car</td>
+              <td class="ctrl-key"><button class="key-bind-btn" data-action="reset">R</button></td>
+            </tr>
+            <tr>
+              <td class="ctrl-action">Pause</td>
+              <td class="ctrl-key"><button class="key-bind-btn" data-action="pause">Esc</button></td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="ctrl-note">Arrow keys always work as driving alternatives.</p>
+        <button class="btn-secondary" id="btn-controls-defaults">RESET DEFAULTS</button>
+        <button class="btn-primary" id="btn-controls-close">DONE</button>
+      </div>
+    </div>
+
+    <!-- ── Countdown lights ── -->
+    <div id="countdown-overlay" style="display:none">
+      <div id="countdown-lights">
+        <div class="cdlight" id="cdl1"></div>
+        <div class="cdlight" id="cdl2"></div>
+        <div class="cdlight" id="cdl3"></div>
+        <div class="cdlight" id="cdl4"></div>
+        <div class="cdlight" id="cdl5"></div>
+      </div>
+    </div>
+    <div id="false-start-banner" style="display:none"></div>
 
     <canvas id="gameCanvas"></canvas>
     <script type="module" src="/src/main.ts"></script>
