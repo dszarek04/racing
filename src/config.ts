@@ -71,3 +71,13 @@ export const RACE = {
   MIN_LAPS:     1,
   MAX_LAPS:     20,
 };
+
+export const RENDER = {
+  /**
+   * Fraction of the window resolution to render at.
+   * 1.0 = full resolution (best quality).
+   * 0.75 = 75% resolution (good balance for mid-range / mobile devices).
+   * 0.5  = half resolution (best performance on low-end / mobile).
+   */
+  RESOLUTION_SCALE: 1.0,
+};
