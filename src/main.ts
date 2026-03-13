@@ -316,7 +316,7 @@ async function startTestMode() {
   summaryScreen.classList.remove('visible');
   gameState = 'test';
   hud.hideLap();
-  hud.setVisible(true, controls.buildHint());
+  hud.setVisible(true);
   await loadCurrentTrack();
   resetCar();
   timerStartTime = null;
@@ -328,7 +328,7 @@ async function startTestMode() {
 async function startRaceMode() {
   menuScreen.classList.remove('visible');
   summaryScreen.classList.remove('visible');
-  hud.setVisible(true, controls.buildHint());
+  hud.setVisible(true);
   raceLap      = 0;
   raceLapTimes = [];
   hud.showLap(1, raceTotalLaps);

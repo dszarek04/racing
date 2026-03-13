@@ -65,12 +65,6 @@ export class Controls {
     this.onClose?.();
   }
 
-  buildHint(): string {
-    const b = this.input.bindings;
-    const f = formatKeyName;
-    return `${f(b.throttle)}/Arrows · ${f(b.left)} ${f(b.right)} = Steer · ${f(b.reset)} = Reset · ${f(b.pause)} = Pause · Scroll = Zoom`;
-  }
-
   private refreshUI() {
     const b = this.input.bindings;
     document.querySelectorAll<HTMLButtonElement>('.key-bind-btn').forEach(btn => {
