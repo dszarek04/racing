@@ -22,6 +22,19 @@ export class Track {
   /** Multiplier applied to the car's maximum forward speed on this track. Default 1. */
   topSpeedMultiplier: number = 1;
 
+  // ── Offscreen rendering cache ─────────────────────────────────────────────
+  // The static track background is pre-rendered once to an offscreen canvas.
+  // Each frame only copies that image (one drawImage call) instead of
+  // re-executing dozens of canvas path operations.
+  private trackCache: HTMLCanvasElement | null = null;
+  private cacheBounds: { minX: number; minY: number } | null = null;
+
+  // ── Nearest-point optimisation for getFrictionMultiplier ─────────────────
+  // Store the index returned by the last successful nearest-point search so the
+  // next call can search a small window around it instead of scanning the entire
+  // centre-line array.
+  private lastNearestCenterIdx = 0;
+
   async load(url: string) {
     const res  = await fetch(url);
     const data: { segments: BezierSegment[]; top_speed_multiplier?: number } = await res.json();
@@ -179,6 +192,69 @@ export class Track {
     // Pre-compute marking runs once so draw() has zero per-frame allocations
     this.outerMarkingRuns = this.computeMarkingRuns(this.outerWall);
     this.innerMarkingRuns = this.computeMarkingRuns(this.innerWall);
+
+    // Reset nearest-point search state for the new geometry
+    this.lastNearestCenterIdx = 0;
+
+    // Build the static rendering cache (replaces per-frame path drawing)
+    this.buildTrackCache();
+  }
+
+  /**
+   * Pre-renders all static track elements to an offscreen canvas so that
+   * draw() can replace many canvas operations with a single drawImage blit.
+   * Called once after buildGeometry(); safe to call again if the geometry
+   * is updated (e.g. track reload).
+   */
+  private buildTrackCache(): void {
+    if (typeof document === 'undefined') return; // guard for non-browser envs
+
+    const pad = 60; // extra margin around track for barrier/grass strokes
+
+    if (this.innerWall.length === 0) { this.trackCache = null; this.cacheBounds = null; return; }
+
+    // Compute bounding box in a single pass to avoid temporary array allocations
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of this.innerWall) {
+      if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+    }
+    for (const p of this.outerWall) {
+      if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+    }
+    minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+
+    const w = Math.ceil(maxX - minX);
+    const h = Math.ceil(maxY - minY);
+
+    // Bail out for extremely large tracks to avoid excessive VRAM usage
+    const MAX_DIM = 4096;
+    if (w > MAX_DIM || h > MAX_DIM) {
+      this.trackCache  = null;
+      this.cacheBounds = null;
+      return;
+    }
+
+    if (!this.trackCache) {
+      this.trackCache = document.createElement('canvas');
+    }
+    this.trackCache.width  = w;
+    this.trackCache.height = h;
+
+    const cCtx = this.trackCache.getContext('2d', { alpha: false })!;
+
+    // Fill with the game background colour so transparent areas blend correctly
+    cCtx.fillStyle = '#1a1a1a';
+    cCtx.fillRect(0, 0, w, h);
+
+    // Translate so that world coordinate (minX, minY) maps to canvas pixel (0, 0)
+    cCtx.save();
+    cCtx.translate(-minX, -minY);
+    this.drawBackground(cCtx);
+    cCtx.restore();
+
+    this.cacheBounds = { minX, minY };
   }
 
   private computeMarkingRuns(wall: Vec2[]): Vec2[][] {
@@ -230,9 +306,31 @@ export class Track {
     }).filter(r => r.length >= 2);
   }
 
+  /**
+   * Main entry point called every frame.
+   * Uses the pre-rendered offscreen cache for the static track background and
+   * draws only the dynamic "next checkpoint" highlight on the live canvas.
+   */
   draw(ctx: CanvasRenderingContext2D, nextCheckpointIdx: number) {
     if (this.centerLine.length === 0) return;
 
+    if (this.trackCache && this.cacheBounds) {
+      // Fast path: blit the pre-rendered background then draw the dynamic overlay
+      ctx.drawImage(this.trackCache, this.cacheBounds.minX, this.cacheBounds.minY);
+    } else {
+      // Fallback (track too large for cache, or non-browser environment)
+      this.drawBackground(ctx);
+    }
+
+    this.drawCheckpointHighlight(ctx, nextCheckpointIdx);
+  }
+
+  /**
+   * Draws all static track elements (road, grass, barriers, markings, start
+   * line).  This is called once into the offscreen cache and also serves as
+   * the fallback when the cache is unavailable.
+   */
+  private drawBackground(ctx: CanvasRenderingContext2D) {
     const grassWidth = 20;
 
     // Helper: stroke a wall polyline, closing it if the track forms a closed loop
@@ -348,60 +446,91 @@ export class Track {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Checkpoints (Start/Finish & Next)
-    this.checkpoints.forEach((cp, i) => {
-      if (i === 0) {
-        // Checkered start/finish line - visible across track width
-        const lineVec = new Vec2(cp.p2.x - cp.p1.x, cp.p2.y - cp.p1.y);
-        const lineDist = Math.hypot(lineVec.x, lineVec.y);
-        const lineDir = new Vec2(lineVec.x / lineDist, lineVec.y / lineDist);
+    // Checkered start/finish line (checkpoint 0) — static, included in cache
+    if (this.checkpoints.length > 0) {
+      const cp = this.checkpoints[0];
+      const lineVec  = new Vec2(cp.p2.x - cp.p1.x, cp.p2.y - cp.p1.y);
+      const lineDist = Math.hypot(lineVec.x, lineVec.y);
+      const lineDir  = new Vec2(lineVec.x / lineDist, lineVec.y / lineDist);
 
-        const checkSize = 20;
-        const numChecks = Math.ceil(lineDist / checkSize);
-        const halfWidth = 8; // narrow checkered stripe
-        for (let c = 0; c < numChecks; c++) {
-          const t1 = c / numChecks;
-          const t2 = (c + 1) / numChecks;
-          const x1 = cp.p1.x + lineDir.x * lineDist * t1;
-          const y1 = cp.p1.y + lineDir.y * lineDist * t1;
-          const x2 = cp.p1.x + lineDir.x * lineDist * t2;
-          const y2 = cp.p1.y + lineDir.y * lineDist * t2;
-          const perpDirX = -lineDir.y;
-          const perpDirY = lineDir.x;
-          ctx.fillStyle = c % 2 === 0 ? '#fff' : '#000';
-          ctx.beginPath();
-          ctx.moveTo(x1 + perpDirX * halfWidth, y1 + perpDirY * halfWidth);
-          ctx.lineTo(x2 + perpDirX * halfWidth, y2 + perpDirY * halfWidth);
-          ctx.lineTo(x2 - perpDirX * halfWidth, y2 - perpDirY * halfWidth);
-          ctx.lineTo(x1 - perpDirX * halfWidth, y1 - perpDirY * halfWidth);
-          ctx.closePath();
-          ctx.fill();
-        }
-      } else if (i === nextCheckpointIdx) {
+      const checkSize = 20;
+      const numChecks = Math.ceil(lineDist / checkSize);
+      const halfWidth = 8;
+      for (let c = 0; c < numChecks; c++) {
+        const t1 = c / numChecks;
+        const t2 = (c + 1) / numChecks;
+        const x1 = cp.p1.x + lineDir.x * lineDist * t1;
+        const y1 = cp.p1.y + lineDir.y * lineDist * t1;
+        const x2 = cp.p1.x + lineDir.x * lineDist * t2;
+        const y2 = cp.p1.y + lineDir.y * lineDist * t2;
+        const perpDirX = -lineDir.y;
+        const perpDirY =  lineDir.x;
+        ctx.fillStyle = c % 2 === 0 ? '#fff' : '#000';
         ctx.beginPath();
-        ctx.moveTo(cp.p1.x, cp.p1.y);
-        ctx.lineTo(cp.p2.x, cp.p2.y);
-        ctx.strokeStyle = 'rgba(0, 255, 0, 0.5)';
-        ctx.lineWidth = 4;
-        ctx.stroke();
+        ctx.moveTo(x1 + perpDirX * halfWidth, y1 + perpDirY * halfWidth);
+        ctx.lineTo(x2 + perpDirX * halfWidth, y2 + perpDirY * halfWidth);
+        ctx.lineTo(x2 - perpDirX * halfWidth, y2 - perpDirY * halfWidth);
+        ctx.lineTo(x1 - perpDirX * halfWidth, y1 - perpDirY * halfWidth);
+        ctx.closePath();
+        ctx.fill();
       }
-    });
+    }
   }
+
+  /**
+   * Draws only the dynamic "next checkpoint" green highlight line.
+   * Called every frame on the live canvas after the cached background blit.
+   */
+  private drawCheckpointHighlight(ctx: CanvasRenderingContext2D, nextCheckpointIdx: number) {
+    if (nextCheckpointIdx < 1 || nextCheckpointIdx >= this.checkpoints.length) return;
+    const cp = this.checkpoints[nextCheckpointIdx];
+    ctx.beginPath();
+    ctx.moveTo(cp.p1.x, cp.p1.y);
+    ctx.lineTo(cp.p2.x, cp.p2.y);
+    ctx.strokeStyle = 'rgba(0, 255, 0, 0.5)';
+    ctx.lineWidth   = 4;
+    ctx.stroke();
+  }
+
 
   /**
    * Return a friction multiplier based on the car position.
    * - 1.0 on asphalt
-   * - 2.0 on grass (within grassWidth from either wall)
-   * - 1.2 on red/white markings on outer tight turns
+   * - 0.97 on grass (within grassWidth from either wall)
+   *
+   * Uses a windowed nearest-point search starting from the last known nearest
+   * index so the per-frame cost is O(WINDOW) rather than O(n).  Falls back to
+   * a full linear scan when the car appears to have teleported (e.g. reset).
    */
   getFrictionMultiplier(pos: Vec2): number {
     const grassWidth = 20;
-    // Find nearest centerLine point and its half-width
-    let minDist = Infinity, nearestIdx = 0;
-    for (let i = 0; i < this.centerLine.length; i++) {
+    const n = this.centerLine.length;
+    if (n === 0) return 1.0;
+
+    // Search a window of ±30 indices around the last known nearest point.
+    // The car moves continuously, so the nearest centre-line point rarely
+    // shifts by more than a few indices between frames.
+    const WINDOW = 30;
+    let minDist = Infinity;
+    let nearestIdx = this.lastNearestCenterIdx;
+
+    for (let di = -WINDOW; di <= WINDOW; di++) {
+      const i = ((this.lastNearestCenterIdx + di) % n + n) % n;
       const d = Math.hypot(pos.x - this.centerLine[i].x, pos.y - this.centerLine[i].y);
       if (d < minDist) { minDist = d; nearestIdx = i; }
     }
+
+    // If the best candidate is suspiciously far away the car may have teleported
+    // (e.g. after a reset).  Fall back to a full scan to recover quickly.
+    if (minDist > 250) {
+      for (let i = 0; i < n; i++) {
+        const d = Math.hypot(pos.x - this.centerLine[i].x, pos.y - this.centerLine[i].y);
+        if (d < minDist) { minDist = d; nearestIdx = i; }
+      }
+    }
+
+    this.lastNearestCenterIdx = nearestIdx;
+
     const hw = Math.hypot(
       this.innerWall[nearestIdx].x - this.centerLine[nearestIdx].x,
       this.innerWall[nearestIdx].y - this.centerLine[nearestIdx].y

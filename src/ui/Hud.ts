@@ -6,7 +6,6 @@ export class Hud {
   private readonly timerEl: HTMLElement;
   private readonly speedEl: HTMLElement;
   private readonly lapEl:   HTMLElement;
-  private readonly hintEl:  HTMLElement;
   private readonly hudEl:   HTMLElement;
 
   speedUnit: SpeedUnit =
@@ -16,7 +15,6 @@ export class Hud {
     this.timerEl = document.getElementById('timer')!;
     this.speedEl = document.getElementById('speed')!;
     this.lapEl   = document.getElementById('lap-counter')!;
-    this.hintEl  = document.getElementById('controls-hint')!;
     this.hudEl   = document.getElementById('hud-tl')!;
 
     document.querySelectorAll<HTMLButtonElement>('.unit-btn').forEach(btn => {
@@ -35,10 +33,8 @@ export class Hud {
     });
   }
 
-  setVisible(v: boolean, hint?: string) {
-    this.hudEl.style.visibility  = v ? 'visible' : 'hidden';
-    this.hintEl.style.visibility = v ? 'visible' : 'hidden';
-    if (v && hint !== undefined) this.hintEl.textContent = hint;
+  setVisible(v: boolean) {
+    this.hudEl.style.visibility = v ? 'visible' : 'hidden';
   }
 
   setTimer(text: string) {

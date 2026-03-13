@@ -160,10 +160,16 @@ export class Car {
       p.pos.y += p.vel.y * dt;
       p.life  -= dt * 1.8;
     }
-    this.particles = this.particles.filter(p => p.life > 0);
-    this.tireMarks = this.tireMarks.filter(
-      r => this.elapsedTime - r.createdAt < TIRE_MARKS.FADE_DURATION
-    );
+    // Remove dead particles in-place (reverse iteration avoids index shifting)
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      if (this.particles[i].life <= 0) this.particles.splice(i, 1);
+    }
+    // Remove expired tire-mark runs in-place
+    for (let i = this.tireMarks.length - 1; i >= 0; i--) {
+      if (this.elapsedTime - this.tireMarks[i].createdAt >= TIRE_MARKS.FADE_DURATION) {
+        this.tireMarks.splice(i, 1);
+      }
+    }
   }
 
   resolveCollisions(walls: Vec2[][]) {

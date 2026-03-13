@@ -6,16 +6,28 @@ import { Hud }             from './ui/Hud';
 import { Controls }        from './ui/Controls';
 import { Countdown }       from './ui/Countdown';
 import { generateTrack }   from './engine/TrackGenerator';
-import { CAMERA, RACE, CAR as CAR_CONFIG } from './config';
+import { CAMERA, RACE, RENDER, CAR as CAR_CONFIG } from './config';
 
 // ─── Canvas ──────────────────────────────────────────────────────────────────
 
 const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
-const ctx    = canvas.getContext('2d')!;
+// alpha:false lets the browser skip blending this canvas with the page background,
+// giving a measurable compositing speedup since the game always paints every pixel.
+const ctx    = canvas.getContext('2d', { alpha: false })!;
 
 function resize() {
-  canvas.width  = window.innerWidth;
-  canvas.height = window.innerHeight;
+  const scale = RENDER.RESOLUTION_SCALE;
+  canvas.width  = Math.ceil(window.innerWidth  * scale);
+  canvas.height = Math.ceil(window.innerHeight * scale);
+  // Keep the CSS display size at full window dimensions so the canvas fills the
+  // viewport even when the backing-store is rendered at a reduced resolution.
+  if (scale !== 1) {
+    canvas.style.width  = window.innerWidth  + 'px';
+    canvas.style.height = window.innerHeight + 'px';
+  } else {
+    canvas.style.width  = '';
+    canvas.style.height = '';
+  }
 }
 window.addEventListener('resize', resize);
 resize();
@@ -304,7 +316,7 @@ async function startTestMode() {
   summaryScreen.classList.remove('visible');
   gameState = 'test';
   hud.hideLap();
-  hud.setVisible(true, controls.buildHint());
+  hud.setVisible(true);
   await loadCurrentTrack();
   resetCar();
   timerStartTime = null;
@@ -316,7 +328,7 @@ async function startTestMode() {
 async function startRaceMode() {
   menuScreen.classList.remove('visible');
   summaryScreen.classList.remove('visible');
-  hud.setVisible(true, controls.buildHint());
+  hud.setVisible(true);
   raceLap      = 0;
   raceLapTimes = [];
   hud.showLap(1, raceTotalLaps);
